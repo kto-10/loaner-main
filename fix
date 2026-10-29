@@ -1,0 +1,9 @@
+SELECT [Case Number],
+       COUNT(DISTINCT [Site])            AS SiteCount,
+       COUNT(DISTINCT [OrganizationKey]) AS OrgCount,
+       STRING_AGG([Site], ', ')          AS Sites
+FROM [PAMdw].[rpt].[vw_Loaner_Main]
+WHERE [Case Start Time] >= '2026-07-01'
+  AND [Case Start Time] <  '2026-08-01'
+GROUP BY [Case Number]
+HAVING COUNT(DISTINCT [Site]) > 1;
