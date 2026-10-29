@@ -1,0 +1,138 @@
+USE [PAMdw]
+GO
+
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+CREATE                     VIEW [rpt].[vw_Loaner_Main]
+AS
+
+	SELECT 
+		[OrganizationKey] = wlor.[OrganizationKey]
+		,[SiteKey] = wlor.[SiteKey]
+		,[Site] = wsit.[SiteName]
+		,[PhysicianKey] = ISNULL(wphy.[PhysicianKey], -1)
+		,[Physician] = ISNULL(wphy.[PhysicianFullName], 'Unknown')
+		,[Order Recieved] = IIF(wlor.[OrderReceivedDateLocal] IS NULL,'No','Yes')
+		,[ProcedureKey] =  ISNULL(wcpr.[ProcedureKey], -1)
+		,[Procedure] = ISNULL(wcpr.[CaseProcedureName], 'Unknown')
+		,[VendorKey] =  ISNULL(wven.[VendorKey], -1)
+		,[Vendor] = ISNULL(wven.[VendorName], 'Unknown')
+		,[VendorTeamKey] =  ISNULL(wvte.[VendorTeamKey], -1)
+		,[Vendor Team] = ISNULL(wvte.[VendorTeamName], 'Unknown')
+		,[Loaner Order Id] = wlor.[LoanerOrderId]
+		,[Loaner Description] = wlin.[LoanerDesc]
+		,[Product] = wpro.[ProductName]
+		,[Barcode] = ISNULL(wpin.[IndexNumber], 'Unknown')
+		,[Expected Qty] = IIF(wcne.[StateKey] = 100, wcne.[MaxQtyNeeded],0)
+		,[Delivered Qty] = wlin.[Qty]
+        ,[CaseClassKey] = wccl.[CaseClassKey]
+		,[Case Type] = wccl.[CaseClassName]
+		,[Case Start Time] = wlin.[CaseStartDateLocal]
+		,[Case Number] = wlin.[CaseNumber]
+		,[Loaner Order Status] = wlos.[LoanerOrderStatusName]
+		,[Product Received] = IIF(wlin.[ProductIsReceived] = 1,'Yes','No')
+		,[Date Received] = wlin.[ProductRecievedDateLocal]  
+		,[Product Ready for Pickup] = IIF(wlin.[ProductIsReadyForPickup] = 1,'Yes','No')
+		,[Product Ready for pickup Date] = wlin.[ProductReadyForPickupDateLocal] 
+		,[Product Returned] = IIF(wlin.[ProductIsReturned] = 1,'Yes','No')
+		,[Product Returned Date] = wlin.[ProductReturnDateLocal]
+		,[Product Pickup Period (hours)] = ISNULL(DATEDIFF(HOUR,wlin.[ProductReadyForPickupDateLocal],wlin.[ProductReturnDateLocal]),-1)
+		,[Notification Period (days)] = ISNULL(CAST(wcas.[NotificationPeriod]/24.0 AS DECIMAL(10,2)),0)
+		,[Product Is Late] = IIF(wlin.[ProductIsLate] = 1,'Yes','No')
+		,[Late Period (hours)] = wlin.[ProductHoursLate]
+		,[Volume Row Num] = ROW_NUMBER() OVER (PARTITION BY wlin.[LoanerInKey] ORDER BY wcpr.[CaseProcedureIsPrimary] DESC)
+		,[lastETLupdate] = aorg.[lastExtractEnd]
+        ,[IsAddon] = IIF(wlin.[CaseClassKey] = 2,'Yes','No') --CaseClassKey (2 = Add On)
+	FROM [adm].[DimOrganization] aorg WITH(NOLOCK) 
+	INNER JOIN [dw].[FactLoanerOrder] wlor WITH(NOLOCK) ON aorg.[OrganizationKey] = wlor.[OrganizationKey]
+	INNER JOIN [dw].[FactLoanerIn] wlin WITH(NOLOCK) ON wlor.[OrganizationKey] = wlin.[OrganizationKey] AND wlor.[LoanerOrderKey] = wlin.[LoanerOrderKey]
+	INNER JOIN [dw].[DimSite] wsit WITH(NOLOCK) ON wlor.[OrganizationKey] = wsit.[OrganizationKey] AND wlor.[SiteKey] = wsit.[SiteKey]
+	LEFT OUTER JOIN [enum].[DimLoanerQA] wlqa WITH(NOLOCK) ON wlor.[LoanerQAKey] = wlqa.[LoanerQAKey]
+	INNER JOIN [dw].[FactCase] wcas WITH(NOLOCK) ON wlor.[OrganizationKey] = wcas.[OrganizationKey] AND wlor.[CaseKey] = wcas.[CaseKey]
+	LEFT OUTER JOIN [dw].[FactCaseNeed] wcne WITH(NOLOCK) ON wlin.[OrganizationKey] = wcne.[OrganizationKey] AND wlin.[CaseNeedKey] = wcne.[CaseNeedKey]
+	LEFT OUTER JOIN [dw].[FactCaseProcedure] wcpr WITH(NOLOCK) ON wcas.[OrganizationKey] = wcpr.[OrganizationKey] AND wcas.[CaseKey] = wcpr.[CaseKey]
+	LEFT OUTER JOIN [dw].[DimPhysician] wphy WITH(NOLOCK) ON wlin.[OrganizationKey] = wphy.[OrganizationKey] AND wlin.[PhysicianKey] = wphy.[PhysicianKey]
+	LEFT OUTER JOIN [dw].[DimVendor] wven WITH(NOLOCK) ON wlor.[OrganizationKey] = wven.[OrganizationKey] AND wlor.[VendorKey] = wven.[VendorKey]
+	LEFT OUTER JOIN [dw].[DimVendorTeam] wvte WITH(NOLOCK) ON wlor.[OrganizationKey] = wvte.[OrganizationKey] AND wlor.[VendorTeamKey] = wvte.[VendorTeamKey]
+	INNER JOIN [enum].[DimCaseClass] wccl WITH(NOLOCK) ON wlin.[CaseClassKey] = wccl.[CaseClassKey]
+	INNER JOIN [enum].[DimLoanerOrderStatus] wlos WITH(NOLOCK) ON wlor.[LoanerOrderStatusKey] = wlos.[LoanerOrderStatusKey]
+	LEFT OUTER JOIN [dw].[DimProduct] wpro WITH(NOLOCK) ON wlin.[OrganizationKey] = wpro.[OrganizationKey] AND wlin.[ProductKey] = wpro.[ProductKey]
+	LEFT OUTER JOIN [dw].[DimProductIndex] wpin WITH(NOLOCK) ON wlin.[OrganizationKey] = wpin.[OrganizationKey] AND wlin.[ProductIndexKey] = wpin.[ProductIndexKey]
+	WHERE aorg.[IsLive] = 1
+	AND wcas.[StateKey] = 100
+	AND wlin.[StateKey] = 100 
+	AND wlor.[StateKey] = 100
+	AND wcas.[CaseStartDateLocal] >= DATEADD(YEAR,-2,GETUTCDATE())
+
+	UNION ALL
+
+	SELECT 
+		[OrganizationKey] = [OrganizationKey] 
+		,[SiteKey] = NULL
+		,[Site] = NULL
+		,[PhysicianKey] = NULL
+		,[Physician] = NULL
+		,[Order Recieved] = NULL
+		,[ProcedureKey] = NULL
+		,[Procedure] = NULL
+		,[VendorKey] = NULL
+		,[Vendor] = NULL
+		,[VendorTeamKey] = NULL
+		,[Vendor Team] = NULL
+		,[Loaner Order Id] = NULL
+		,[Loaner Description] = NULL
+		,[Product] = NULL
+		,[Barcode] = NULL
+		,[Expected Qty] = NULL
+		,[Delivered Qty] = NULL
+        ,[CaseClassKey] = NULL
+		,[Case Type] = NULL
+		,[Case Start Time] = NULL
+		,[Case Number] = NULL
+		,[Loaner Order Status] = NULL
+		,[Product Received] = NULL 
+		,[Date Received] = NULL 
+		,[Product Ready for Pickup] = NULL 
+		,[Product Ready for pickup Date] = NULL 
+		,[Product Returned] = NULL
+		,[Product Returned Date] = NULL
+		,[Product Pickup Period (hours)] = NULL
+		,[Notification Period (days)] = NULL
+		,[Product Is Late] = NULL
+		,[Late Period (hours)] = NULL
+		,[Volume Row Num] = 1
+		,[lastETLupdate] = [lastExtractEnd]
+        ,[IsAddon] = NULL
+	FROM [adm].[DimOrganization] 
+	WHERE [IsLive] = 1
+
+GO
+
+
+
+
+
+
+
+ SELECT count (DISTINCT [Case Number])FROM [PAMdw].[rpt].[vw_Loaner_Main]
+		WHERE 
+		--[Site]='Main Hospital'
+	     CAST([Case Start Time] AS DATE) >='2026-07-01' AND  CAST([Case Start Time] AS DATE) <='2026-07-31'
+
+
+
+
+
+
+   SELECT count (DISTINCT [Case Number]), [site] FROM [PAMdw].[rpt].[vw_Loaner_Main]
+		WHERE 
+		--[Site]='Main Hospital'
+	     CAST([Case Start Time] AS DATE) >='2026-07-01' AND  CAST([Case Start Time] AS DATE) <='2026-07-31'
+		 GROUP BY [site]
+
